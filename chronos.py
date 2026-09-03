@@ -347,7 +347,7 @@ def generate_html_timeline(df, colors, args):
                 hoverlabel=dict(bgcolor=task_color, font=dict(color=text_color, weight="bold", size=11, family="Arial"))
             ))
 
-            # C. Ukryta, niewidoczna tarcza hover dla dymka z wymuszonym stylem kolorystycznym okienka
+            # C. A hidden, invisible hover target for a tooltip with a forced window color scheme
             fig.add_trace(go.Scatter(
                 x=[mid_date], y=[text_y],
                 mode="markers",
