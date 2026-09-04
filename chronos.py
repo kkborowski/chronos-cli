@@ -50,6 +50,17 @@ def load_project_data(file_path, date_mode="eu"):
         print(f"Error: Missing required columns in the file: {missing_cols}. Expected format: {required_cols}")
         sys.exit(1)
 
+    # SECURE OPTIONAL LINK SCHEMA CONFIGURATION (BACKWARD COMPATIBLE)
+    if "Jira Link" not in df.columns:
+        df["Jira Link"] = ""
+    else:
+        df["Jira Link"] = df["Jira Link"].fillna("").astype(str).str.strip()
+
+    if "Confluence Link" not in df.columns:
+        df["Confluence Link"] = ""
+    else:
+        df["Confluence Link"] = df["Confluence Link"].fillna("").astype(str).str.strip()
+
     parsed_dates = []
     for idx, row in df.iterrows():
         raw_date = str(row["Target Date"]).strip()
@@ -224,7 +235,8 @@ def generate_png_timeline(df, unique_types, colors, args):
 
 
 def generate_html_timeline(df, colors, args):
-    """Generates an interactive HTML timeline that looks EXACTLY like the custom PNG version."""
+    """Generates an interactive HTML timeline that looks EXACTLY like the custom PNG version
+    with independent, fully clickable [Jira] and [Conf] buttons inside the callout text boxes."""
     if "plotly" not in sys.modules:
         print("Error: The 'plotly' library is required for HTML output. Please run: pip install plotly")
         sys.exit(1)
@@ -316,10 +328,28 @@ def generate_html_timeline(df, colors, args):
             # Determine text color contrast
             text_color = "white" if row["Type"] in ["implementation", "bug fixing", "dependency", "holidays"] or colors[row["Type"]] in ["#1f77b4", "#9467bd", "#d62728", "#8c564b"] else "black"
             
+            # Fetch links strings safely
+            jira_url = str(row["Jira Link"]).strip()
+            conf_url = str(row["Confluence Link"]).strip()
+
             # Text wrap for callout body formatting
             wrapped_text = "<br>".join(textwrap.wrap(str(row["Task"]), width=20))
-            final_text = f"<b>{wrapped_text}</b><br>({row['Duration']})"
+
+            # CSS INJECTION FOR SEAMLESS HOVER LAYER PENETRATION:
+            # pointer-events:none allows the mouse to pass through the static text to trigger the hover shield beneath.
+            # pointer-events:auto overrides this on the specific anchor tags to keep links clickable.
+            display_text = f"<span style='pointer-events: none;'><b>{wrapped_text}</b><br>({row['Duration']})</span>"
             
+            # Multi-link row append block
+            links_html = []
+            if jira_url:
+                links_html.append(f"<a href='{jira_url}' target='_blank' style='color:{text_color}; text-decoration:underline; font-weight:bold; pointer-events: auto;'>[Jira]</a>")
+            if conf_url:
+                links_html.append(f"<a href='{conf_url}' target='_blank' style='color:{text_color}; text-decoration:underline; font-weight:bold; pointer-events: auto;'>[Conf]</a>")
+            
+            if links_html:
+                display_text += "<br><span style='pointer-events: auto;'>" + " &nbsp; ".join(links_html) + "</span>"
+
             # Configure custom hover tooltip structure
             hover_card = f"<b>Task:</b> {row['Task']}<br><b>Duration:</b> {row['Duration']}<br><b>Target:</b> {row['Target Date']}"
 
@@ -362,7 +392,7 @@ def generate_html_timeline(df, colors, args):
 
             # D. Draw text Callout cloud container box (Layer 3)
             fig.add_annotation(
-                x=mid_date, y=text_y, text=final_text,
+                x=mid_date, y=text_y, text=display_text,
                 showarrow=False, align="center", font=dict(size=9, color=text_color),
                 bordercolor="black", borderwidth=0.5, borderpad=5,
                 bgcolor=task_color, opacity=1.0
@@ -390,18 +420,23 @@ def generate_html_timeline(df, colors, args):
         height=850
     )
 
-    fig.write_html(args.output)
+    fig.write_html(args.output, include_plotlyjs='cdn')
 
 
 def main():
-    help_epilog = ("DATE FORMAT LAYOUT REQUIRMENT:\n"
-                   "  Set your regional formatting mode using the '--date-format' / '-df' parameter:\n"
-                   "  -df eu  -> European / Indian layout style (DD.MM.YYYY) - [DEFAULT]\n"
-                   "  -df us  -> American layout style (MM/DD/YYYY)\n"
-                   "  -df iso -> Asian / International style (YYYY-MM-DD)")
-    
+    help_epilog = (
+        "DATE FORMAT LAYOUT REQUIREMENT:\n"
+        "  Set your regional formatting mode using the '--date-format' / '-df' parameter:\n"
+        "  -df eu  -> European / Indian layout style (DD.MM.YYYY) - [DEFAULT]\n"
+        "  -df us  -> American layout style (MM/DD/YYYY)\n"
+        "  -df iso -> Asian / International style (YYYY-MM-DD)\n\n"
+        "MULTI-LINK ECOSYSTEM HOOKS (v1.2.2):\n"
+        "  Add optional columns named 'Jira Link' and/or 'Confluence Link' to your file.\n"
+        "  Interactive buttons [Jira] and [Conf] will emerge dynamically inside the HTML callout boxes."
+    )
+
     parser = argparse.ArgumentParser(
-        description="Chronos CLI v1.1.0 - Highly optimized timeline generator supporting PNG and HTML output formats.",
+        description="Chronos CLI v1.2.0 - Highly optimized timeline generator supporting PNG and HTML output formats with custom dual Jira & Confluence links.",
         epilog=help_epilog,
         formatter_class=argparse.RawTextHelpFormatter,
     )
@@ -480,7 +515,7 @@ def main():
     elif output_ext == ".html":
         generate_html_timeline(df, colors, args)
 
-    print(f"Success! Chronos CLI generated and saved your timeline asset as '{output_str}'.")
+    print(f"Success! Chronos CLI generated and saved your timeline asset as '{output_str}' using format mode '{date_mode}'.")
 
 
 if __name__ == "__main__":
