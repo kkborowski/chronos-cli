@@ -3,23 +3,23 @@ import os
 import sys
 import textwrap
 from datetime import datetime, timedelta
+from typing import Any
 import matplotlib.colors as mcolors
-import matplotlib.dates as mdates
+import matplotlib.dates as mdates  # type: ignore[import-untyped]
+import matplotlib.patches as mpatches
 import matplotlib.pyplot as plt
-import pandas as pd
+import pandas as pd  # type: ignore[import-untyped]
 
-# Try to import plotly for HTML generation
+# Try to import plotly for HTML generation safely
+go: Any = None
 try:
-    import plotly.express as px
-    import plotly.graph_objects as go
+    import plotly.graph_objects as go  # type: ignore[import-untyped,no-redef]
 except ImportError:
-    # Plotly will only be strictly required if the user chooses .html output
     pass
 
 
 def load_project_data(file_path, date_mode="eu"):
     """Loads data from a CSV or Excel file and standardizes column names."""
-    # IF FILE_PATH IS A TUPLE, EXTRACT THE FIRST ELEMENT
     if isinstance(file_path, tuple):
         file_path = file_path[0] if len(file_path) > 0 else ""
 
@@ -36,7 +36,10 @@ def load_project_data(file_path, date_mode="eu"):
         elif ext in [".xlsx", ".xls"]:
             df = pd.read_excel(file_path)
         else:
-            print("Error: Unsupported file format. Please provide a .csv or .xlsx file.")
+            print(
+                "Error: Unsupported file format. Please provide a .csv or "
+                ".xlsx file."
+            )
             sys.exit(1)
     except Exception as e:
         print(f"Error reading file: {e}")
@@ -47,7 +50,10 @@ def load_project_data(file_path, date_mode="eu"):
     required_cols = ["Task", "Target Date", "Duration", "Type"]
     missing_cols = [col for col in required_cols if col not in df.columns]
     if missing_cols:
-        print(f"Error: Missing required columns in the file: {missing_cols}. Expected format: {required_cols}")
+        print(
+            f"Error: Missing required columns in the file: {missing_cols}. "
+            f"Expected format: {required_cols}"
+        )
         sys.exit(1)
 
     # SECURE OPTIONAL LINK SCHEMA CONFIGURATION (BACKWARD COMPATIBLE)
@@ -59,11 +65,14 @@ def load_project_data(file_path, date_mode="eu"):
     if "Confluence Link" not in df.columns:
         df["Confluence Link"] = ""
     else:
-        df["Confluence Link"] = df["Confluence Link"].fillna("").astype(str).str.strip()
+        df["Confluence Link"] = (
+            df["Confluence Link"].fillna("").astype(str).str.strip()
+        )
 
     parsed_dates = []
     for idx, row in df.iterrows():
         raw_date = str(row["Target Date"]).strip()
+        row_idx = int(str(idx))
 
         try:
             if date_mode == "us":
@@ -78,22 +87,30 @@ def load_project_data(file_path, date_mode="eu"):
 
             parsed_dates.append(parsed_d)
         except ValueError:
-            print("\n" + "="*70)
+            print("\n" + "=" * 70)
             print(" STRICT DATE FORMAT VALIDATION ERROR ")
-            print("="*70)
-            print(f"Row {idx + 2}: Invalid date string encountered: '{raw_date}' for mode '{date_mode}'.")
+            print("=" * 70)
+            print(
+                f"Row {row_idx + 2}: Invalid date string: '{raw_date}' "
+                f"for mode '{date_mode}'."
+            )
             print("\nCRITICAL REQUIREMENT:")
-            print(f"All dates must strictly match the selected numerical format (--date-format / -df):")
-            print("  eu  -> DD.MM.YYYY, DD/MM/YYYY or DD-MM-YYYY (e.g., 21.03.2027) - DEFAULT")
-            print("  us  -> MM.DD.YYYY, MM/DD/YYYY or MM-DD-YYYY (e.g., 03/21/2027)")
-            print("  iso -> YYYY-MM-DD, YYYY/MM/DD or YYYY.MM.DD (e.g., 2027-03-21)")
-            print("\nTEXTUAL MONTHS (like '15-Sep' or '08-Feb') ARE NOT ALLOWED.")
-            print("Please fix the file data layout or pass the correct -df flag.")
-            print("="*70 + "\n")
+            print(
+                "All dates must strictly match the selected numerical format "
+                "(--date-format / -df):")
+            print("  eu  -> DD.MM.YYYY, DD/MM/YYYY or DD-MM-YYYY - DEFAULT")
+            print("  us  -> MM.DD.YYYY, MM/DD/YYYY or MM-DD-YYYY")
+            print("  iso -> YYYY-MM-DD, YYYY/MM/DD or YYYY.MM.DD\n")
+            print("TEXTUAL MONTHS (like '15-Sep' or '08-Feb') ARE FORBIDDEN.")
+            print(
+                "Please fix the file data layout or pass the correct -df flag."
+            )
+            print("=" * 70 + "\n")
             sys.exit(1)
 
     df["End"] = parsed_dates
     return df
+
 
 def get_start_date(row):
     """Calculates the start date based on the Duration string."""
@@ -147,13 +164,19 @@ def generate_png_timeline(df, unique_types, colors, args):
         # Layer 1: Horizontal duration bars
         for _, row in dataframe.iterrows():
             dur_days = (row["End"] - row["Start"]).days
-            ax.barh(row["Y"], dur_days, left=row["Start"], height=0.04, color=colors[row["Type"]], edgecolor="black", alpha=0.9, zorder=3)
+            start_num = float(mdates.date2num(row["Start"]))
+            ax.barh(
+                row["Y"], dur_days, left=start_num, height=0.04,
+                color=colors[row["Type"]], edgecolor="black", alpha=0.9,
+                zorder=3
+            )
 
         # Layer 2: Connector lines (hidden behind text boxes)
         for i, (_, row) in enumerate(dataframe.iterrows()):
             dur_days = (row["End"] - row["Start"]).days
             task_color = colors[row["Type"]]
             mid_date = row["Start"] + timedelta(days=dur_days / 2)
+            mid_date_num = float(mdates.date2num(mid_date))
 
             levels_count = dataframe["Level"].max() + 1
             if is_above:
@@ -163,13 +186,17 @@ def generate_png_timeline(df, unique_types, colors, args):
                 base_offset = 0.55 + (i % 4) * 0.55
                 text_y = (-0.32 - levels_count * 0.08) - base_offset
 
-            ax.plot([mid_date, mid_date], [row["Y"], text_y], color=task_color, linewidth=0.8, alpha=0.4, zorder=1)
+            ax.plot(
+                [mid_date_num, mid_date_num], [row["Y"], text_y],
+                color=task_color, linewidth=0.8, alpha=0.4, zorder=1
+            )
 
         # Layer 3: Text-wrapped colorful callout labels
         for i, (_, row) in enumerate(dataframe.iterrows()):
             dur_days = (row["End"] - row["Start"]).days
             task_color = colors[row["Type"]]
             mid_date = row["Start"] + timedelta(days=dur_days / 2)
+            mid_date_num = float(mdates.date2num(mid_date))
 
             levels_count = dataframe["Level"].max() + 1
             if is_above:
@@ -179,13 +206,25 @@ def generate_png_timeline(df, unique_types, colors, args):
                 base_offset = 0.55 + (i % 4) * 0.55
                 text_y = (-0.32 - levels_count * 0.08) - base_offset
 
-            text_color = "white" if row["Type"] in ["implementation", "bug fixing", "dependency", "holidays"] or colors[row["Type"]] in ["#1f77b4", "#9467bd", "#d62728", "#8c564b"] else "black"
+            if row["Type"] in [
+                "implementation", "bug fixing", "dependency", "holidays"
+            ] or colors[row["Type"]] in [
+                "#1f77b4", "#9467bd", "#d62728", "#8c564b"
+            ]:
+                text_color = "white"
+            else:
+                text_color = "black"
+
             wrapped_text = textwrap.fill(str(row["Task"]), width=20)
             final_text = f"{wrapped_text}\n({row['Duration']})"
 
             ax.text(
-                mid_date, text_y, final_text, fontsize=8, ha="center", va="center", color=text_color, weight="bold", zorder=5,
-                bbox=dict(boxstyle="round,pad=0.4", fc=task_color, ec="black", lw=0.5, alpha=1.0, zorder=5)
+                mid_date_num, text_y, final_text, fontsize=8, ha="center",
+                va="center", color=text_color, weight="bold", zorder=5,
+                bbox=dict(
+                    boxstyle="round,pad=0.4", fc=task_color,
+                    ec="black", lw=0.5, alpha=1.0, zorder=5
+                )
             )
 
     if not df_normal.empty:
@@ -209,21 +248,50 @@ def generate_png_timeline(df, unique_types, colors, args):
 
     current_tick = start_date
     while current_tick <= end_date:
-        ax.plot([current_tick, current_tick], [-0.05, 0.05], color="black", linewidth=2, zorder=3)
-        ax.text(current_tick, -0.11, current_tick.strftime("%d-%b"), fontsize=9, weight="bold", color="black", ha="right", va="top", rotation=45, zorder=6)
+        tick_num = float(mdates.date2num(current_tick))
+        ax.plot(
+            [tick_num, tick_num], [-0.05, 0.05],
+            color="black", linewidth=2, zorder=3
+        )
+        ax.text(
+            tick_num, -0.11, current_tick.strftime("%d-%b"),
+            fontsize=9, weight="bold", color="black", ha="right",
+            va="top", rotation=45, zorder=6
+        )
         current_tick += timedelta(weeks=2)
 
     # Top calendar headers
-    dates_range = pd.date_range(start=df["Start"].min() - timedelta(days=7), end=df["End"].max() + timedelta(days=14))
+    dates_range = pd.date_range(
+        start=df["Start"].min() - timedelta(days=7),
+        end=df["End"].max() + timedelta(days=14)
+    )
     first_days = dates_range[dates_range.is_month_start]
 
     for f_day in first_days:
-        ax.plot([f_day, f_day], [min_y + 0.8, max_y - 0.5], color="lightgray", linestyle="--", linewidth=1, zorder=1)
-        ax.text(f_day, max_y - 0.3, f_day.strftime("%b %Y"), fontsize=10, weight="bold", color="#2c3e50", ha="center", va="center", zorder=10,
-                bbox=dict(boxstyle="square,pad=0.2", fc="white", ec="none", alpha=1.0))
+        f_day_num = float(mdates.date2num(f_day))
+        ax.plot(
+            [f_day_num, f_day_num], [min_y + 0.8, max_y - 0.5],
+            color="lightgray", linestyle="--", linewidth=1, zorder=1
+        )
+        ax.text(
+            f_day_num, max_y - 0.3, f_day.strftime("%b %Y"), fontsize=10,
+            weight="bold", color="#2c3e50", ha="center", va="center",
+            zorder=10, bbox=dict(
+                boxstyle="square,pad=0.2", fc="white", ec="none", alpha=1.0
+            )
+        )
 
-    legend_elements = [plt.Rectangle((0, 0), 1, 1, facecolor=colors[t], edgecolor="black", alpha=0.9, label=str(t).title()) for t in unique_types]
-    ax.legend(handles=legend_elements, loc="lower center", bbox_to_anchor=(0.5, 0.02), ncol=min(len(unique_types), 8), fontsize=10, frameon=True, facecolor="#f8f9fa", edgecolor="gray")
+    legend_elements = [
+        mpatches.Rectangle(
+            (0, 0), 1, 1, facecolor=colors[type_str], edgecolor="black",
+            alpha=0.9, label=str(type_str).title()
+        ) for type_str in unique_types
+    ]
+    ax.legend(
+        handles=legend_elements, loc="lower center",
+        bbox_to_anchor=(0.5, 0.02), ncol=min(len(unique_types), 8),
+        fontsize=10, frameon=True, facecolor="#f8f9fa", edgecolor="gray"
+    )
 
     ax.get_yaxis().set_visible(False)
     for spine in ax.spines.values():
@@ -235,10 +303,13 @@ def generate_png_timeline(df, unique_types, colors, args):
 
 
 def generate_html_timeline(df, colors, args):
-    """Generates an interactive HTML timeline that looks EXACTLY like the custom PNG version
-    with independent, fully clickable [Jira] and [Conf] buttons inside the callout text boxes."""
-    if "plotly" not in sys.modules:
-        print("Error: The 'plotly' library is required for HTML output. Please run: pip install plotly")
+    """Generates an interactive HTML timeline with independent,
+    fully clickable [Jira] and [Conf] buttons inside the callout text boxes."""
+    if go is None:
+        print(
+            "Error: 'plotly' is required for HTML output. Run: pip install "
+            "plotly"
+        )
         sys.exit(1)
 
     # 1. Process data structures (same logic as PNG)
@@ -263,7 +334,10 @@ def generate_html_timeline(df, colors, args):
     fig = go.Figure()
 
     # 2. Draw Month-start vertical background grid lines
-    dates_range = pd.date_range(start=df["Start"].min() - timedelta(days=7), end=df["End"].max() + timedelta(days=14))
+    dates_range = pd.date_range(
+        start=df["Start"].min() - timedelta(days=7),
+        end=df["End"].max() + timedelta(days=14)
+    )
     first_days = dates_range[dates_range.is_month_start]
 
     for f_day in first_days:
@@ -276,8 +350,9 @@ def generate_html_timeline(df, colors, args):
         # Month Label at the top
         fig.add_annotation(
             x=f_day, y=max_y - 0.3, text=f_day.strftime('%b %Y'),
-            showarrow=False, font=dict(size=11, color="#2c3e50", weight="bold"),
-            bgcolor="white", bordercolor="rgba(0,0,0,0)"
+            showarrow=False, font=dict(
+                size=11, color="#2c3e50", weight="bold"
+            ), bgcolor="white", bordercolor="rgba(0,0,0,0)"
         )
 
     # 3. Draw central main timeline black axis line
@@ -290,7 +365,7 @@ def generate_html_timeline(df, colors, args):
         x=[start_date, end_date], y=[0, 0],
         mode="lines", line=dict(color="black", width=3),
         showlegend=False, hoverinfo="skip"
-    ))
+        ))
 
     # Add bi-weekly timeline ticks and angled dates below the axis
     current_tick = start_date
@@ -326,32 +401,58 @@ def generate_html_timeline(df, colors, args):
                 text_y = (-0.32 - levels_count * 0.08) - base_offset
 
             # Determine text color contrast
-            text_color = "white" if row["Type"] in ["implementation", "bug fixing", "dependency", "holidays"] or colors[row["Type"]] in ["#1f77b4", "#9467bd", "#d62728", "#8c564b"] else "black"
-            
+            if row["Type"] in [
+                "implementation", "bug fixing", "dependency", "holidays"
+            ] or colors[row["Type"]] in [
+                "#1f77b4", "#9467bd", "#d62728", "#8c564b"
+            ]:
+                text_color = "white"
+            else:
+                text_color = "black"
+
             # Fetch links strings safely
             jira_url = str(row["Jira Link"]).strip()
             conf_url = str(row["Confluence Link"]).strip()
 
             # Text wrap for callout body formatting
-            wrapped_text = "<br>".join(textwrap.wrap(str(row["Task"]), width=20))
+            wrapped_text = "<br>".join(
+                textwrap.wrap(str(row["Task"]), width=20)
+            )
 
             # CSS INJECTION FOR SEAMLESS HOVER LAYER PENETRATION:
-            # pointer-events:none allows the mouse to pass through the static text to trigger the hover shield beneath.
-            # pointer-events:auto overrides this on the specific anchor tags to keep links clickable.
-            display_text = f"<span style='pointer-events: none;'><b>{wrapped_text}</b><br>({row['Duration']})</span>"
-            
+            display_text = (
+                f"<span style='pointer-events: none;'><b>"
+                f"{wrapped_text}</b><br>"
+                f"({row['Duration']})</span>"
+            )
+
             # Multi-link row append block
             links_html = []
             if jira_url:
-                links_html.append(f"<a href='{jira_url}' target='_blank' style='color:{text_color}; text-decoration:underline; font-weight:bold; pointer-events: auto;'>[Jira]</a>")
+                links_html.append(
+                    f"<a href='{jira_url}' target='_blank' "
+                    f"style='color:{text_color}; "
+                    f"text-decoration:underline; font-weight:bold; "
+                    f"pointer-events: auto;'>[Jira]</a>"
+                )
             if conf_url:
-                links_html.append(f"<a href='{conf_url}' target='_blank' style='color:{text_color}; text-decoration:underline; font-weight:bold; pointer-events: auto;'>[Conf]</a>")
-            
+                links_html.append(
+                    f"<a href='{conf_url}' target='_blank' "
+                    f"style='color:{text_color}; text-decoration:underline; "
+                    f"font-weight:bold; pointer-events: auto;'>[Conf]</a>"
+                )
+
             if links_html:
-                display_text += "<br><span style='pointer-events: auto;'>" + " &nbsp; ".join(links_html) + "</span>"
+                display_text += (
+                    f"<br><span style='pointer-events: auto;'> &nbsp; "
+                    f"{' '.join(links_html)}</span>"
+                )
 
             # Configure custom hover tooltip structure
-            hover_card = f"<b>Task:</b> {row['Task']}<br><b>Duration:</b> {row['Duration']}<br><b>Target:</b> {row['Target Date']}"
+            hover_card = (
+                f"<b>Task:</b> {row['Task']}<br><b>Duration:</b> "
+                f"{row['Duration']}<br><b>Target:</b> {row['Target Date']}"
+            )
 
             # A. Draw connector thin line (Layer 2)
             fig.add_trace(go.Scatter(
@@ -362,22 +463,39 @@ def generate_html_timeline(df, colors, args):
 
             # B. Draw horizontal thickness bar (Layer 1)
             half_height = 0.02
-            box_x = [row["Start"], row["End"], row["End"], row["Start"], row["Start"]]
-            box_y = [row["Y"]-half_height, row["Y"]-half_height, row["Y"]+half_height, row["Y"]+half_height, row["Y"]-half_height]
-            
+            box_x = [
+                row["Start"], row["End"], row["End"], row["Start"],
+                row["Start"]
+            ]
+            box_y = [
+                row["Y"] - half_height, row["Y"] - half_height,
+                row["Y"] + half_height, row["Y"] + half_height,
+                row["Y"] - half_height
+            ]
+
             show_in_legend = False
             if row["Type"] not in added_legends:
                 added_legends.add(row["Type"])
                 show_in_legend = True
 
             fig.add_trace(go.Scatter(
-                x=box_x, y=box_y, fill="toself", mode="lines", fillcolor=task_color,
-                line=dict(color="black", width=1), opacity=0.9, name=str(row["Type"]).title(),
-                legendgroup=str(row["Type"]), showlegend=show_in_legend, text=hover_card, hoverinfo="text",
-                hoverlabel=dict(bgcolor=task_color, font=dict(color=text_color, weight="bold", size=11, family="Arial"))
+                x=box_x, y=box_y, fill="toself", mode="lines",
+                fillcolor=task_color, line=dict(color="black", width=1),
+                opacity=0.9, name=str(row["Type"]).title(),
+                legendgroup=str(row["Type"]), showlegend=show_in_legend,
+                text=hover_card, hoverinfo="text",
+                hoverlabel=dict(
+                    bgcolor=task_color,
+                    font=dict(
+                        color=text_color,
+                        weight="bold",
+                        size=11,
+                        family="Arial"
+                    )
+                )
             ))
 
-            # C. A hidden, invisible hover target for a tooltip with a forced window color scheme
+            # C. Hidden hover target for tooltips
             fig.add_trace(go.Scatter(
                 x=[mid_date], y=[text_y],
                 mode="markers",
@@ -387,31 +505,47 @@ def generate_html_timeline(df, colors, args):
                 text=hover_card,
                 hoverinfo="text",
                 zorder=4,
-                hoverlabel=dict(bgcolor=task_color, font=dict(color=text_color, weight="bold", size=11, family="Arial"))
+                hoverlabel=dict(bgcolor=task_color, font=dict(
+                    color=text_color, weight="bold", size=11,
+                    family="Arial"
+                ))
             ))
 
             # D. Draw text Callout cloud container box (Layer 3)
             fig.add_annotation(
                 x=mid_date, y=text_y, text=display_text,
-                showarrow=False, align="center", font=dict(size=9, color=text_color),
+                showarrow=False, align="center", font=dict(
+                    size=9, color=text_color
+                ),
                 bordercolor="black", borderwidth=0.5, borderpad=5,
                 bgcolor=task_color, opacity=1.0
             )
 
     # Render top/bottom sets matching layout targets
-    if not df_normal.empty: render_plotly_section(df_normal, is_above=True)
-    if not df_dep.empty: render_plotly_section(df_dep, is_above=False)
+    if not df_normal.empty:
+        render_plotly_section(df_normal, is_above=True)
+    if not df_dep.empty:
+        render_plotly_section(df_dep, is_above=False)
 
     # 5. Global chart canvas styling adjustments
     fig.update_layout(
-        title=dict(text=f"<b>{args.title}</b>", x=0.5, y=0.96, font=dict(size=18, color="#1a1a1a")),
+        title=dict(
+            text=f"<b>{args.title}</b>", x=0.5, y=0.96,
+            font=dict(size=18, color="#1a1a1a")
+        ),
         plot_bgcolor="white",
         paper_bgcolor="white",
         xaxis=dict(
-            type="date", range=[df["Start"].min() - timedelta(days=5), df["End"].max() + timedelta(days=10)],
+            type="date", range=[
+                df["Start"].min() - timedelta(days=5),
+                df["End"].max() + timedelta(days=10)
+            ],
             showgrid=False, zeroline=False, showticklabels=False
         ),
-        yaxis=dict(range=[min_y, max_y], showgrid=False, zeroline=False, showticklabels=False, fixedrange=True),
+        yaxis=dict(
+            range=[min_y, max_y], showgrid=False, zeroline=False,
+            showticklabels=False, fixedrange=True
+        ),
         legend=dict(
             orientation="h", yanchor="bottom", y=0.01, xanchor="center", x=0.5,
             bgcolor="#f8f9fa", bordercolor="gray", borderwidth=1
@@ -426,59 +560,80 @@ def generate_html_timeline(df, colors, args):
 def main():
     help_epilog = (
         "DATE FORMAT LAYOUT REQUIREMENT:\n"
-        "  Set your regional formatting mode using the '--date-format' / '-df' parameter:\n"
-        "  -df eu  -> European / Indian layout style (DD.MM.YYYY) - [DEFAULT]\n"
+        "  Set your regional formatting mode using the '--date-format' / "
+        "'-df' parameter:\n"
+        "  -df eu  -> European / Indian layout style (DD.MM.YYYY) - "
+        "[DEFAULT]\n"
         "  -df us  -> American layout style (MM/DD/YYYY)\n"
         "  -df iso -> Asian / International style (YYYY-MM-DD)\n\n"
         "MULTI-LINK ECOSYSTEM HOOKS (v1.2.2):\n"
-        "  Add optional columns named 'Jira Link' and/or 'Confluence Link' to your file.\n"
-        "  Interactive buttons [Jira] and [Conf] will emerge dynamically inside the HTML callout boxes."
+        "  Add optional columns named 'Jira Link' and/or 'Confluence Link' "
+        "to your file.\n"
+        "  Interactive buttons [Jira] and [Conf] will emerge dynamically "
+        "inside the HTML callout boxes."
     )
 
     parser = argparse.ArgumentParser(
-        description="Chronos CLI v1.2.0 - Highly optimized timeline generator supporting PNG and HTML output formats with custom dual Jira & Confluence links.",
+        description=(
+            "Chronos CLI v1.2.2 - Highly optimized timeline generator "
+            "supporting PNG and HTML output formats with custom dual "
+            "Jira & Confluence links."
+        ),
         epilog=help_epilog,
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
         "-f", "--file", required=True,
-        help="Path or name of the input CSV or Excel data file (e.g., project_data.xlsx).",
+        help="Path or name of the input CSV or Excel data file.",
     )
     parser.add_argument(
         "-t", "--title", required=True,
         help="The main title text displayed at the top of the timeline chart.",
     )
     parser.add_argument(
-        "-o", "--output", required=False, default="project_timeline_output.png",
-        help="Optional: Output file path. Use '.png' extension for image or '.html' for interactive view.\nDefaults to 'project_timeline_output.png'."
+        "-o", "--output", required=False,
+        default="project_timeline_output.png",
+        help="Optional: Output file path. Use '.png' extension for image or "
+        "'.html' for interactive view. "
+        "Defaults to 'project_timeline_output.png'."
     )
     parser.add_argument(
         "-df", "--date-format", required=False, default="eu",
         choices=["us", "eu", "iso"],
         help="Optional: Date format processing mode for international teams.\n"
-             "  eu    : Enforce European/Indian format (DD/MM/YYYY) - DEFAULT\n"
-             "  us    : Enforce US format (MM/DD/YYYY)\n"
-             "  iso   : Enforce Asian/Standard format (YYYY/MM/DD)"
+             "  eu  : Enforce European/Indian format (DD/MM/YYYY) - DEFAULT\n"
+             "  us  : Enforce US format (MM/DD/YYYY)\n"
+             "  iso : Enforce Asian/Standard format (YYYY/MM/DD)"
     )
 
     args = parser.parse_args()
 
-    file_str = str(args.file).replace("(", "").replace(")", "").replace("'", "").replace('"', "").strip()
-    if file_str.endswith(","): file_str = file_str[:-1].strip()
+    file_str = str(args.file).replace("(", "").replace(")", "")
+    file_str = file_str.replace("'", "").replace('"', "").strip()
+    if file_str.endswith(","):
+        file_str = file_str[:-1].strip()
 
-    title_str = str(args.title).replace("(", "").replace(")", "").replace("'", "").replace('"', "").strip()
-    if title_str.endswith(","): title_str = title_str[:-1].strip()
+    title_str = str(args.title).replace("(", "").replace(")", "")
+    title_str = title_str.replace("'", "").replace('"', "").strip()
+    if title_str.endswith(","):
+        title_str = title_str[:-1].strip()
 
-    output_str = str(args.output).replace("(", "").replace(")", "").replace("'", "").replace('"', "").strip()
-    if output_str.endswith(","): output_str = output_str[:-1].strip()
+    output_str = str(args.output).replace("(", "").replace(")", "")
+    output_str = output_str.replace("'", "").replace('"', "").strip()
+    if output_str.endswith(","):
+        output_str = output_str[:-1].strip()
 
-    date_mode = str(args.date_format).replace("(", "").replace(")", "").replace("'", "").replace('"', "").strip()
-    if date_mode.endswith(","): date_mode = date_mode[:-1].strip()
+    date_mode = str(args.date_format).replace("(", "").replace(")", "")
+    date_mode = date_mode.replace("'", "").replace('"', "").strip()
+    if date_mode.endswith(","):
+        date_mode = date_mode[:-1].strip()
 
     output_ext = os.path.splitext(output_str)[1].lower()
-    
+
     if output_ext not in [".png", ".html"]:
-        print("Error: Invalid output file extension. Only '.png' and '.html' are supported.")
+        print(
+            "Error: Invalid output extension. Only .png/.html are supported."
+        )
         sys.exit(1)
 
     # Load data using the cleaned file path string
@@ -487,25 +642,31 @@ def main():
     df = df.sort_values(by="Start").reset_index(drop=True)
 
     colors = {
-        "implementation": "#1f77b4", "testing": "#ff7f0e", "reporting": "#2ca02c",
-        "bug fixing": "#d62728", "dependency": "#9467bd", "holidays": "#8c564b",
+        "implementation": "#1f77b4", "testing": "#ff7f0e",
+        "reporting": "#2ca02c", "bug fixing": "#d62728",
+        "dependency": "#9467bd", "holidays": "#8c564b",
         "certification": "#e377c2", "monthly release": "#bcbd22",
     }
 
     unique_types = df["Type"].unique()
     used_hex_colors = set(colors.values())
+
+    # Secure proper colors resolution through official matplotlib syntax
+    cmap = plt.get_cmap("tab20")
     available_fallback_colors = [
-        mcolors.to_hex(c) for c in plt.cm.tab20.colors
-        if mcolors.to_hex(c) not in used_hex_colors
+        mcolors.to_hex(cmap(i)) for i in range(20)
+        if mcolors.to_hex(cmap(i)) not in used_hex_colors
     ]
 
     color_idx = 0
     for t in unique_types:
         if t not in colors:
-            colors[t] = available_fallback_colors[color_idx % len(available_fallback_colors)]
+            colors[t] = available_fallback_colors[
+                color_idx % len(available_fallback_colors)
+            ]
             color_idx += 1
 
-    # Overwrite args object values with safe string types for backend engine consumption
+    # Overwrite args object values with safe string types
     args.file = file_str
     args.title = title_str
     args.output = output_str
@@ -515,7 +676,10 @@ def main():
     elif output_ext == ".html":
         generate_html_timeline(df, colors, args)
 
-    print(f"Success! Chronos CLI generated and saved your timeline asset as '{output_str}' using format mode '{date_mode}'.")
+    print(
+        f"Success! Chronos CLI generated and saved your timeline asset "
+        f"as '{output_str}' using format mode '{date_mode}'."
+    )
 
 
 if __name__ == "__main__":
