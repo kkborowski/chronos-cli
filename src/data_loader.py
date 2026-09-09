@@ -68,7 +68,9 @@ class DataLoader:
             sys.exit(1)
 
         # Secure optional link layout schema configurations safely
-        for col_name in ["Jira Link", "Confluence Link", "Connections"]:
+        for col_name in [
+            "Jira Link", "Confluence Link", "Connections", "Description"
+        ]:
             if col_name not in df.columns:
                 df[col_name] = ""
             else:

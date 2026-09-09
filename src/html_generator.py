@@ -1,3 +1,4 @@
+import html
 import sys
 import textwrap
 from datetime import timedelta
@@ -123,6 +124,21 @@ _TODAY_JS = """
     });
 })();
 """
+
+
+# Caps how wide a hover tooltip can grow, in characters per line.
+_HOVER_WRAP_WIDTH = 60
+
+
+def _format_description(raw):
+    """Escapes and hard-wraps a description into hover tooltip lines."""
+    text = " ".join(str(raw).split())
+    if not text:
+        return ""
+    return "<br>".join(
+        html.escape(line)
+        for line in textwrap.wrap(text, width=_HOVER_WRAP_WIDTH)
+    )
 
 
 def _parse_connections(raw):
@@ -302,6 +318,9 @@ def generate_html_timeline(df, colors, args):
                 f"<b>Task:</b> {row['Task']}<br><b>Duration:</b> "
                 f"{row['Duration']}<br><b>Target:</b> {row['Target Date']}"
             )
+            description = _format_description(row.get("Description", ""))
+            if description:
+                hover_card += f"<br><br>{description}"
 
             fig.add_trace(go.Scatter(
                 x=[mid_date, mid_date], y=[row["Y"], text_y],
@@ -339,6 +358,7 @@ def generate_html_timeline(df, colors, args):
                 ),
                 hoverlabel=dict(
                     bgcolor=task_color,
+                    align="left",
                     font=dict(
                         color=text_color,
                         weight="bold",
@@ -360,7 +380,7 @@ def generate_html_timeline(df, colors, args):
                 meta=dict(
                     taskId=task_id, baseOpacity=1.0, groups=connections
                 ),
-                hoverlabel=dict(bgcolor=task_color, font=dict(
+                hoverlabel=dict(bgcolor=task_color, align="left", font=dict(
                     color=text_color, weight="bold", size=11,
                     family="Arial"
                 ))

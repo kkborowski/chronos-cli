@@ -24,7 +24,10 @@ def main():
         "  Add an optional column named 'Connections' holding a ';' "
         "separated list of keys.\n"
         "  Tasks sharing a key are highlighted together when any one of "
-        "them is clicked."
+        "them is clicked.\n\n"
+        "TASK DESCRIPTIONS (HTML only):\n"
+        "  Add an optional column named 'Description' to show extra detail "
+        "in the hover tooltip."
     )
 
     parser = argparse.ArgumentParser(
