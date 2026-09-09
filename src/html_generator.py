@@ -126,6 +126,96 @@ _TODAY_JS = """
 """
 
 
+# Plotly's native hover label is not interactive, so task hovers use this
+# custom card instead: it survives long enough to move onto it and click.
+_TOOLTIP_JS = """
+(function () {
+    var gd = document.getElementById('{plot_id}');
+    if (!gd) { return; }
+
+    var tip = document.createElement('div');
+    tip.style.cssText = [
+        'position:absolute', 'display:none', 'z-index:1000',
+        'max-width:340px', 'padding:8px 10px', 'border-radius:4px',
+        'border:1px solid rgba(0,0,0,0.45)',
+        'font:bold 11px Arial, sans-serif', 'line-height:1.4',
+        'pointer-events:auto', 'box-shadow:0 2px 6px rgba(0,0,0,0.35)'
+    ].join(';');
+    if (getComputedStyle(gd).position === 'static') {
+        gd.style.position = 'relative';
+    }
+    gd.appendChild(tip);
+
+    var hideTimer = null;
+
+    function hide() { tip.style.display = 'none'; }
+    function cancelHide() {
+        if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+    }
+    function scheduleHide() {
+        cancelHide();
+        hideTimer = setTimeout(hide, 350);
+    }
+
+    tip.addEventListener('mouseenter', cancelHide);
+    tip.addEventListener('mouseleave', hide);
+
+    function link(url, label, color) {
+        return '<a href="' + url + '" target="_blank" ' +
+            'rel="noopener noreferrer" style="color:' + color +
+            ';text-decoration:underline;">' + label + '</a>';
+    }
+
+    function anchorPoint(pt, ev) {
+        var size = gd._fullLayout && gd._fullLayout._size;
+        if (size && pt.xaxis && pt.yaxis) {
+            return {
+                x: pt.xaxis.d2p(pt.x) + size.l,
+                y: pt.yaxis.d2p(pt.y) + size.t
+            };
+        }
+        var rect = gd.getBoundingClientRect();
+        return {
+            x: ev.event ? ev.event.clientX - rect.left : 0,
+            y: ev.event ? ev.event.clientY - rect.top : 0
+        };
+    }
+
+    gd.on('plotly_hover', function (ev) {
+        var pt = ev.points && ev.points[0];
+        if (!pt) { return; }
+        var meta = pt.data.meta;
+        if (!meta || meta.taskId === undefined) { return; }
+        cancelHide();
+
+        var links = [];
+        if (meta.jira) { links.push(link(meta.jira, '[Jira]', meta.fg)); }
+        if (meta.conf) { links.push(link(meta.conf, '[Conf]', meta.fg)); }
+
+        tip.innerHTML = (pt.data.text || '') +
+            (links.length ? '<br><br>' + links.join(' &nbsp; ') : '');
+        tip.style.background = meta.bg;
+        tip.style.color = meta.fg;
+        tip.style.display = 'block';
+
+        // Anchored to the task itself, not the cursor, so the gap is fixed.
+        var GAP = 12;
+        var at = anchorPoint(pt, ev);
+        var w = tip.offsetWidth;
+        var h = tip.offsetHeight;
+        var x = at.x + GAP;
+        var y = at.y + GAP;
+        if (x + w > gd.clientWidth) { x = at.x - GAP - w; }
+        if (y + h > gd.clientHeight) { y = at.y - GAP - h; }
+        tip.style.left = Math.max(0, x) + 'px';
+        tip.style.top = Math.max(0, y) + 'px';
+    });
+
+    gd.on('plotly_unhover', scheduleHide);
+})();
+"""
+
+
 # Caps how wide a hover tooltip can grow, in characters per line.
 _HOVER_WRAP_WIDTH = 60
 
@@ -141,13 +231,12 @@ def _format_description(raw):
     )
 
 
-def _wrap_url(raw):
-    """Escapes and hard-wraps a URL so it cannot widen the hover tooltip."""
-    return "<br>".join(
-        html.escape(line) for line in textwrap.wrap(
-            str(raw).strip(), width=_HOVER_WRAP_WIDTH, break_long_words=True
-        )
-    )
+def _safe_url(raw):
+    """Allows only http(s) links so sheet data cannot inject javascript: URLs."""
+    url = str(raw).strip()
+    if url.lower().startswith(("http://", "https://")):
+        return url
+    return ""
 
 
 def _parse_connections(raw):
@@ -289,8 +378,8 @@ def generate_html_timeline(df, colors, args):
             else:
                 text_color = "black"
 
-            jira_url = str(row["Jira Link"]).strip()
-            conf_url = str(row["Confluence Link"]).strip()
+            jira_url = _safe_url(row["Jira Link"])
+            conf_url = _safe_url(row["Confluence Link"])
 
             wrapped_text = "<br>".join(
                 textwrap.wrap(str(row["Task"]), width=20)
@@ -330,12 +419,12 @@ def generate_html_timeline(df, colors, args):
             description = _format_description(row.get("Description", ""))
             if description:
                 hover_card += f"<br><br>{description}"
-            if jira_url:
-                hover_card += f"<br><br><b>Jira:</b> {_wrap_url(jira_url)}"
-            if conf_url:
-                hover_card += (
-                    f"<br><b>Confluence:</b> {_wrap_url(conf_url)}"
-                )
+
+            hover_meta = dict(
+                taskId=task_id, groups=connections,
+                jira=jira_url, conf=conf_url,
+                bg=task_color, fg=text_color
+            )
 
             fig.add_trace(go.Scatter(
                 x=[mid_date, mid_date], y=[row["Y"], text_y],
@@ -367,20 +456,8 @@ def generate_html_timeline(df, colors, args):
                 fillcolor=task_color, line=dict(color="black", width=1),
                 opacity=0.9, name=str(row["Type"]).title(),
                 legendgroup=str(row["Type"]), showlegend=show_in_legend,
-                text=hover_card, hoverinfo="text",
-                meta=dict(
-                    taskId=task_id, baseOpacity=0.9, groups=connections
-                ),
-                hoverlabel=dict(
-                    bgcolor=task_color,
-                    align="left",
-                    font=dict(
-                        color=text_color,
-                        weight="bold",
-                        size=11,
-                        family="Arial"
-                    )
-                )
+                text=hover_card, hoverinfo="none",
+                meta=dict(hover_meta, baseOpacity=0.9)
             ))
 
             fig.add_trace(go.Scatter(
@@ -390,15 +467,9 @@ def generate_html_timeline(df, colors, args):
                 showlegend=False,
                 legendgroup=str(row["Type"]),
                 text=hover_card,
-                hoverinfo="text",
+                hoverinfo="none",
                 zorder=4,
-                meta=dict(
-                    taskId=task_id, baseOpacity=1.0, groups=connections
-                ),
-                hoverlabel=dict(bgcolor=task_color, align="left", font=dict(
-                    color=text_color, weight="bold", size=11,
-                    family="Arial"
-                ))
+                meta=dict(hover_meta, baseOpacity=1.0)
             ))
 
             fig.add_annotation(
@@ -444,5 +515,5 @@ def generate_html_timeline(df, colors, args):
 
     fig.write_html(
         args.output, include_plotlyjs='cdn',
-        post_script=[_HIGHLIGHT_JS, _TODAY_JS]
+        post_script=[_HIGHLIGHT_JS, _TODAY_JS, _TOOLTIP_JS]
     )
