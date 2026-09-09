@@ -89,6 +89,42 @@ _HIGHLIGHT_JS = """
 """
 
 
+# Resolved in the browser on every page load, so the arrow tracks the
+# viewer's current date rather than the date the file was generated.
+_TODAY_JS = """
+(function () {
+    var gd = document.getElementById('{plot_id}');
+    if (!gd) { return; }
+
+    function pad(n) { return (n < 10 ? '0' : '') + n; }
+
+    var now = new Date();
+    var midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    var iso = midnight.getFullYear() + '-' +
+        pad(midnight.getMonth() + 1) + '-' + pad(midnight.getDate());
+
+    var range = gd.layout.xaxis && gd.layout.xaxis.range;
+    if (range) {
+        var stamp = midnight.getTime();
+        if (stamp < new Date(range[0]).getTime()) { return; }
+        if (stamp > new Date(range[1]).getTime()) { return; }
+    }
+
+    Plotly.addTraces(gd, {
+        x: [iso],
+        y: [-0.12],
+        mode: 'markers',
+        marker: {symbol: 'triangle-up', size: 13, color: 'red'},
+        showlegend: false,
+        hoverinfo: 'text',
+        text: 'Today: ' + midnight.toDateString(),
+        cliponaxis: false,
+        zorder: 5
+    });
+})();
+"""
+
+
 def _parse_connections(raw):
     """Splits a ';' separated Connections cell into normalized group keys."""
     tokens = str(raw).split(";")
@@ -372,5 +408,6 @@ def generate_html_timeline(df, colors, args):
     )
 
     fig.write_html(
-        args.output, include_plotlyjs='cdn', post_script=_HIGHLIGHT_JS
+        args.output, include_plotlyjs='cdn',
+        post_script=[_HIGHLIGHT_JS, _TODAY_JS]
     )
