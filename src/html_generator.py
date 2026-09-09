@@ -69,10 +69,13 @@ _HIGHLIGHT_JS = """
         }
     }
 
+    var pointClicked = false;
+
     gd.on('plotly_click', function (ev) {
         if (!ev || !ev.points || !ev.points.length) { return; }
         var meta = ev.points[0].data.meta;
         if (!meta || meta.taskId === undefined) { return; }
+        pointClicked = true;
         if (selected === meta.taskId) {
             selected = null;
             applyHighlight(null);
@@ -80,6 +83,18 @@ _HIGHLIGHT_JS = """
         }
         selected = meta.taskId;
         applyHighlight(linkedIds(meta.taskId, meta.groups));
+    });
+
+    // Runs after plotly_click, so a bare background click clears the state.
+    gd.addEventListener('click', function (ev) {
+        if (ev.target.closest && ev.target.closest('.modebar')) { return; }
+        setTimeout(function () {
+            if (!pointClicked && selected !== null) {
+                selected = null;
+                applyHighlight(null);
+            }
+            pointClicked = false;
+        }, 0);
     });
 
     gd.on('plotly_doubleclick', function () {
