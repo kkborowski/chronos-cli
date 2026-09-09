@@ -19,7 +19,12 @@ def main():
         "  Add optional columns named 'Jira Link' and/or 'Confluence Link' "
         "to your file.\n"
         "  Interactive buttons [Jira] and [Conf] will emerge dynamically "
-        "inside the HTML callout boxes."
+        "inside the HTML callout boxes.\n\n"
+        "LINKED TASK GROUPS (HTML only):\n"
+        "  Add an optional column named 'Connections' holding a ';' "
+        "separated list of keys.\n"
+        "  Tasks sharing a key are highlighted together when any one of "
+        "them is clicked."
     )
 
     parser = argparse.ArgumentParser(

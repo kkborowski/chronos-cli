@@ -76,6 +76,7 @@ Your source `.csv` or `.xlsx` spreadsheet must contain the following required st
 | **Type** | Required | Mapping type key for dynamic color binding (e.g., `implementation`, `dependency`, `testing`) |
 | **Jira Link** | Optional | Full URL connection string to an explicit ticket (e.g., `https://example-jira.com`) |
 | **Confluence Link** | Optional | Full URL connection string to a documentation hub (e.g., `https://example-confluence.com`) |
+| **Connections** | Optional | `;` separated group keys (e.g., `auth-epic;q3-release`). Tasks sharing a key highlight together on click in HTML output. Leave blank for a standalone task. |
 
 ---
 

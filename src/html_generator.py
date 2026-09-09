@@ -11,8 +11,9 @@ except ImportError:
     go = None
 
 
-# Injected into the exported HTML: clicking a task highlights it and dims
-# every other task. Click the same task again (or double-click) to reset.
+# Injected into the exported HTML: clicking a task highlights it plus every
+# task sharing a Connections key, and dims the rest. Click the same task
+# again (or double-click) to reset.
 _HIGHLIGHT_JS = """
 (function () {
     var gd = document.getElementById('{plot_id}');
@@ -21,14 +22,33 @@ _HIGHLIGHT_JS = """
     var DIM = 0.12;
     var selected = null;
 
-    function applyHighlight(taskId) {
+    function sharesGroup(a, b) {
+        if (!a || !b) { return false; }
+        for (var i = 0; i < a.length; i++) {
+            if (b.indexOf(a[i]) !== -1) { return true; }
+        }
+        return false;
+    }
+
+    function linkedIds(taskId, groups) {
+        var ids = {};
+        ids[taskId] = true;
+        (gd.data || []).forEach(function (trace) {
+            var meta = trace.meta;
+            if (!meta || meta.taskId === undefined) { return; }
+            if (sharesGroup(groups, meta.groups)) { ids[meta.taskId] = true; }
+        });
+        return ids;
+    }
+
+    function applyHighlight(ids) {
         var indices = [];
         var opacities = [];
         (gd.data || []).forEach(function (trace, i) {
             var meta = trace.meta;
             if (!meta || meta.taskId === undefined) { return; }
             var base = meta.baseOpacity === undefined ? 1 : meta.baseOpacity;
-            var on = (taskId === null) || (meta.taskId === taskId);
+            var on = (ids === null) || (ids[meta.taskId] === true);
             indices.push(i);
             opacities.push(on ? base : base * DIM);
         });
@@ -39,26 +59,45 @@ _HIGHLIGHT_JS = """
         var update = {};
         (gd.layout.annotations || []).forEach(function (ann, i) {
             if (!ann.name || ann.name.indexOf('task-') !== 0) { return; }
-            var on = (taskId === null) || (ann.name === 'task-' + taskId);
+            var id = ann.name.slice(5);
+            var on = (ids === null) || (ids[id] === true);
             update['annotations[' + i + '].opacity'] = on ? 1 : DIM;
         });
         if (Object.keys(update).length) {
             Plotly.relayout(gd, update);
         }
-
-        selected = taskId;
     }
 
     gd.on('plotly_click', function (ev) {
         if (!ev || !ev.points || !ev.points.length) { return; }
         var meta = ev.points[0].data.meta;
         if (!meta || meta.taskId === undefined) { return; }
-        applyHighlight(selected === meta.taskId ? null : meta.taskId);
+        if (selected === meta.taskId) {
+            selected = null;
+            applyHighlight(null);
+            return;
+        }
+        selected = meta.taskId;
+        applyHighlight(linkedIds(meta.taskId, meta.groups));
     });
 
-    gd.on('plotly_doubleclick', function () { applyHighlight(null); });
+    gd.on('plotly_doubleclick', function () {
+        selected = null;
+        applyHighlight(null);
+    });
 })();
 """
+
+
+def _parse_connections(raw):
+    """Splits a ';' separated Connections cell into normalized group keys."""
+    tokens = str(raw).split(";")
+    groups = []
+    for token in tokens:
+        key = token.strip().lower()
+        if key and key not in groups:
+            groups.append(key)
+    return groups
 
 
 def _pack_tasks(dataframe):
@@ -166,6 +205,7 @@ def generate_html_timeline(df, colors, args):
         for i, (_, row) in enumerate(dataframe.iterrows()):
             task_id = task_id_counter[0]
             task_id_counter[0] += 1
+            connections = _parse_connections(row.get("Connections", ""))
             dur_days = (row["End"] - row["Start"]).days
             task_color = colors[row["Type"]]
             mid_date = row["Start"] + timedelta(days=dur_days / 2)
@@ -231,7 +271,9 @@ def generate_html_timeline(df, colors, args):
                 x=[mid_date, mid_date], y=[row["Y"], text_y],
                 mode="lines", line=dict(color=task_color, width=1),
                 opacity=0.4, showlegend=False, hoverinfo="skip",
-                meta=dict(taskId=task_id, baseOpacity=0.4)
+                meta=dict(
+                    taskId=task_id, baseOpacity=0.4, groups=connections
+                )
             ))
 
             half_height = 0.02
@@ -256,7 +298,9 @@ def generate_html_timeline(df, colors, args):
                 opacity=0.9, name=str(row["Type"]).title(),
                 legendgroup=str(row["Type"]), showlegend=show_in_legend,
                 text=hover_card, hoverinfo="text",
-                meta=dict(taskId=task_id, baseOpacity=0.9),
+                meta=dict(
+                    taskId=task_id, baseOpacity=0.9, groups=connections
+                ),
                 hoverlabel=dict(
                     bgcolor=task_color,
                     font=dict(
@@ -277,7 +321,9 @@ def generate_html_timeline(df, colors, args):
                 text=hover_card,
                 hoverinfo="text",
                 zorder=4,
-                meta=dict(taskId=task_id, baseOpacity=1.0),
+                meta=dict(
+                    taskId=task_id, baseOpacity=1.0, groups=connections
+                ),
                 hoverlabel=dict(bgcolor=task_color, font=dict(
                     color=text_color, weight="bold", size=11,
                     family="Arial"
