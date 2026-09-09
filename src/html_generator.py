@@ -141,6 +141,15 @@ def _format_description(raw):
     )
 
 
+def _wrap_url(raw):
+    """Escapes and hard-wraps a URL so it cannot widen the hover tooltip."""
+    return "<br>".join(
+        html.escape(line) for line in textwrap.wrap(
+            str(raw).strip(), width=_HOVER_WRAP_WIDTH, break_long_words=True
+        )
+    )
+
+
 def _parse_connections(raw):
     """Splits a ';' separated Connections cell into normalized group keys."""
     tokens = str(raw).split(";")
@@ -321,6 +330,12 @@ def generate_html_timeline(df, colors, args):
             description = _format_description(row.get("Description", ""))
             if description:
                 hover_card += f"<br><br>{description}"
+            if jira_url:
+                hover_card += f"<br><br><b>Jira:</b> {_wrap_url(jira_url)}"
+            if conf_url:
+                hover_card += (
+                    f"<br><b>Confluence:</b> {_wrap_url(conf_url)}"
+                )
 
             fig.add_trace(go.Scatter(
                 x=[mid_date, mid_date], y=[row["Y"], text_y],
