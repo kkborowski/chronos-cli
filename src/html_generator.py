@@ -428,6 +428,9 @@ def generate_html_timeline(df, colors, args):
                 )
 
             hover_card = (
+                f"<span style='float:right; padding-left:14px; "
+                f"font-size:8px;'>"
+                f"[{html.escape(str(row['Type']).upper())}]</span>"
                 f"<b>Task:</b> {row['Task']}<br><b>Duration:</b> "
                 f"{row['Duration']}<br><b>Target:</b> {row['Target Date']}"
             )
