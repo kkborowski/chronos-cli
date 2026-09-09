@@ -11,6 +11,56 @@ except ImportError:
     go = None
 
 
+# Injected into the exported HTML: clicking a task highlights it and dims
+# every other task. Click the same task again (or double-click) to reset.
+_HIGHLIGHT_JS = """
+(function () {
+    var gd = document.getElementById('{plot_id}');
+    if (!gd) { return; }
+
+    var DIM = 0.12;
+    var selected = null;
+
+    function applyHighlight(taskId) {
+        var indices = [];
+        var opacities = [];
+        (gd.data || []).forEach(function (trace, i) {
+            var meta = trace.meta;
+            if (!meta || meta.taskId === undefined) { return; }
+            var base = meta.baseOpacity === undefined ? 1 : meta.baseOpacity;
+            var on = (taskId === null) || (meta.taskId === taskId);
+            indices.push(i);
+            opacities.push(on ? base : base * DIM);
+        });
+        if (indices.length) {
+            Plotly.restyle(gd, {opacity: opacities}, indices);
+        }
+
+        var update = {};
+        (gd.layout.annotations || []).forEach(function (ann, i) {
+            if (!ann.name || ann.name.indexOf('task-') !== 0) { return; }
+            var on = (taskId === null) || (ann.name === 'task-' + taskId);
+            update['annotations[' + i + '].opacity'] = on ? 1 : DIM;
+        });
+        if (Object.keys(update).length) {
+            Plotly.relayout(gd, update);
+        }
+
+        selected = taskId;
+    }
+
+    gd.on('plotly_click', function (ev) {
+        if (!ev || !ev.points || !ev.points.length) { return; }
+        var meta = ev.points[0].data.meta;
+        if (!meta || meta.taskId === undefined) { return; }
+        applyHighlight(selected === meta.taskId ? null : meta.taskId);
+    });
+
+    gd.on('plotly_doubleclick', function () { applyHighlight(null); });
+})();
+"""
+
+
 def _pack_tasks(dataframe):
     """Groups overlapping tasks into the minimum number of rows."""
     levels = []
@@ -107,11 +157,15 @@ def generate_html_timeline(df, colors, args):
         current_tick += timedelta(weeks=2)
 
     # 4. Helper drawing loop matching custom PNG layout layers
+    task_id_counter = [0]
+
     def render_plotly_section(dataframe, is_above=True):
         dataframe = dataframe.sort_values(by="Start")
         added_legends = set()
 
         for i, (_, row) in enumerate(dataframe.iterrows()):
+            task_id = task_id_counter[0]
+            task_id_counter[0] += 1
             dur_days = (row["End"] - row["Start"]).days
             task_color = colors[row["Type"]]
             mid_date = row["Start"] + timedelta(days=dur_days / 2)
@@ -176,7 +230,8 @@ def generate_html_timeline(df, colors, args):
             fig.add_trace(go.Scatter(
                 x=[mid_date, mid_date], y=[row["Y"], text_y],
                 mode="lines", line=dict(color=task_color, width=1),
-                opacity=0.4, showlegend=False, hoverinfo="skip"
+                opacity=0.4, showlegend=False, hoverinfo="skip",
+                meta=dict(taskId=task_id, baseOpacity=0.4)
             ))
 
             half_height = 0.02
@@ -201,6 +256,7 @@ def generate_html_timeline(df, colors, args):
                 opacity=0.9, name=str(row["Type"]).title(),
                 legendgroup=str(row["Type"]), showlegend=show_in_legend,
                 text=hover_card, hoverinfo="text",
+                meta=dict(taskId=task_id, baseOpacity=0.9),
                 hoverlabel=dict(
                     bgcolor=task_color,
                     font=dict(
@@ -221,6 +277,7 @@ def generate_html_timeline(df, colors, args):
                 text=hover_card,
                 hoverinfo="text",
                 zorder=4,
+                meta=dict(taskId=task_id, baseOpacity=1.0),
                 hoverlabel=dict(bgcolor=task_color, font=dict(
                     color=text_color, weight="bold", size=11,
                     family="Arial"
@@ -233,7 +290,8 @@ def generate_html_timeline(df, colors, args):
                     size=9, color=text_color
                 ),
                 bordercolor="black", borderwidth=0.5, borderpad=5,
-                bgcolor=task_color, opacity=1.0
+                bgcolor=task_color, opacity=1.0,
+                name=f"task-{task_id}"
             )
 
     if not df_normal.empty:
@@ -267,4 +325,6 @@ def generate_html_timeline(df, colors, args):
         height=850
     )
 
-    fig.write_html(args.output, include_plotlyjs='cdn')
+    fig.write_html(
+        args.output, include_plotlyjs='cdn', post_script=_HIGHLIGHT_JS
+    )
