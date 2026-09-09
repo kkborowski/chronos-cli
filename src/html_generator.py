@@ -151,10 +151,23 @@ _TOOLTIP_JS = """
     var tip = document.createElement('div');
     tip.style.cssText = [
         'position:absolute', 'display:none', 'z-index:1000',
-        'max-width:340px', 'padding:8px 10px', 'border-radius:4px',
-        'border:1px solid rgba(0,0,0,0.45)',
-        'font:bold 11px Arial, sans-serif', 'line-height:1.4',
-        'pointer-events:auto', 'box-shadow:0 2px 6px rgba(0,0,0,0.35)'
+        'max-width:340px', 'padding:10px 13px', 'border-radius:9px',
+        'border:1px solid rgba(255,255,255,0.28)',
+        'border-bottom-color:rgba(0,0,0,0.35)',
+        'font:bold 11px Arial, sans-serif', 'line-height:1.45',
+        'pointer-events:auto',
+        'background-image:linear-gradient(157deg,' +
+            'rgba(255,255,255,0.22) 0%,' +
+            'rgba(255,255,255,0.05) 42%,' +
+            'rgba(0,0,0,0.16) 100%)',
+        'box-shadow:0 14px 28px rgba(0,0,0,0.28),' +
+            '0 6px 10px rgba(0,0,0,0.22),' +
+            'inset 0 1px 0 rgba(255,255,255,0.42),' +
+            'inset 0 -1px 0 rgba(0,0,0,0.28)',
+        'text-shadow:0 1px 1px rgba(0,0,0,0.22)',
+        'opacity:0', 'transform:translateY(6px) scale(0.96)',
+        'transform-origin:top left',
+        'transition:opacity 120ms ease-out, transform 120ms ease-out'
     ].join(';');
     if (getComputedStyle(gd).position === 'static') {
         gd.style.position = 'relative';
@@ -162,10 +175,18 @@ _TOOLTIP_JS = """
     gd.appendChild(tip);
 
     var hideTimer = null;
+    var fadeTimer = null;
 
-    function hide() { tip.style.display = 'none'; }
+    function hide() {
+        tip.style.opacity = '0';
+        tip.style.transform = 'translateY(6px) scale(0.96)';
+        fadeTimer = setTimeout(function () {
+            tip.style.display = 'none';
+        }, 120);
+    }
     function cancelHide() {
         if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+        if (fadeTimer) { clearTimeout(fadeTimer); fadeTimer = null; }
     }
     function scheduleHide() {
         cancelHide();
@@ -209,7 +230,7 @@ _TOOLTIP_JS = """
 
         tip.innerHTML = (pt.data.text || '') +
             (links.length ? '<br><br>' + links.join(' &nbsp; ') : '');
-        tip.style.background = meta.bg;
+        tip.style.backgroundColor = meta.bg;
         tip.style.color = meta.fg;
         tip.style.display = 'block';
 
@@ -224,9 +245,87 @@ _TOOLTIP_JS = """
         if (y + h > gd.clientHeight) { y = at.y - GAP - h; }
         tip.style.left = Math.max(0, x) + 'px';
         tip.style.top = Math.max(0, y) + 'px';
+        requestAnimationFrame(function () {
+            tip.style.opacity = '1';
+            tip.style.transform = 'translateY(0) scale(1)';
+        });
     });
 
     gd.on('plotly_unhover', scheduleHide);
+})();
+"""
+
+
+# Matches the hover card's raised look on the SVG task boxes and bars.
+# Re-applied after every replot because Plotly rebuilds those nodes.
+_THEME_JS = """
+(function () {
+    var gd = document.getElementById('{plot_id}');
+    if (!gd) { return; }
+
+    var NS = 'http://www.w3.org/2000/svg';
+    var GLOSS = 'chronos-gloss';
+    var LIFT = 'chronos-lift';
+
+    function ensureDefs() {
+        var svg = gd.querySelector('svg.main-svg');
+        if (!svg || svg.querySelector('#' + GLOSS)) { return; }
+        var defs = document.createElementNS(NS, 'defs');
+        defs.innerHTML =
+            '<linearGradient id="' + GLOSS + '" x1="0" y1="0" ' +
+                'x2="0.35" y2="1">' +
+                '<stop offset="0%" stop-color="#fff" stop-opacity="0.30"/>' +
+                '<stop offset="45%" stop-color="#fff" stop-opacity="0.06"/>' +
+                '<stop offset="100%" stop-color="#000" stop-opacity="0.18"/>' +
+            '</linearGradient>' +
+            '<filter id="' + LIFT + '" x="-30%" y="-30%" ' +
+                'width="170%" height="180%">' +
+                '<feDropShadow dx="0" dy="2" stdDeviation="2" ' +
+                    'flood-color="#000" flood-opacity="0.35"/>' +
+            '</filter>';
+        svg.insertBefore(defs, svg.firstChild);
+    }
+
+    function glossFor(rect, cls) {
+        var gloss = rect.cloneNode(false);
+        gloss.setAttribute('class', cls);
+        gloss.setAttribute('fill', 'url(#' + GLOSS + ')');
+        gloss.setAttribute('stroke', 'none');
+        gloss.style.filter = 'none';
+        gloss.style.pointerEvents = 'none';
+        return gloss;
+    }
+
+    function decorate() {
+        ensureDefs();
+
+        gd.querySelectorAll('.' + GLOSS).forEach(function (node) {
+            node.parentNode.removeChild(node);
+        });
+
+        var anns = (gd.layout && gd.layout.annotations) || [];
+        gd.querySelectorAll('g.annotation').forEach(function (node) {
+            var ann = anns[parseInt(node.getAttribute('data-index'), 10)];
+            if (!ann || String(ann.name || '').indexOf('task-') !== 0) {
+                return;
+            }
+            var rect = node.querySelector('rect.bg');
+            if (!rect) { return; }
+            rect.setAttribute('rx', 6);
+            rect.setAttribute('ry', 6);
+            rect.style.filter = 'url(#' + LIFT + ')';
+            rect.parentNode.insertBefore(
+                glossFor(rect, GLOSS), rect.nextSibling
+            );
+        });
+
+        gd.querySelectorAll('.scatterlayer .js-fill').forEach(function (path) {
+            path.style.filter = 'url(#' + LIFT + ')';
+        });
+    }
+
+    gd.on('plotly_afterplot', decorate);
+    decorate();
 })();
 """
 
@@ -533,5 +632,5 @@ def generate_html_timeline(df, colors, args):
 
     fig.write_html(
         args.output, include_plotlyjs='cdn',
-        post_script=[_HIGHLIGHT_JS, _TODAY_JS, _TOOLTIP_JS]
+        post_script=[_HIGHLIGHT_JS, _TODAY_JS, _TOOLTIP_JS, _THEME_JS]
     )

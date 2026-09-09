@@ -2,7 +2,16 @@ import textwrap
 from datetime import timedelta
 import matplotlib.dates as mdates  # type: ignore[import-untyped]
 import matplotlib.patches as mpatches
+import matplotlib.patheffects as mpe
 import matplotlib.pyplot as plt
+
+
+# Matches the HTML theme's raised look.
+_LIFT = [
+    mpe.withSimplePatchShadow(
+        offset=(1.8, -1.8), shadow_rgbFace="black", alpha=0.35
+    )
+]
 
 
 def _pack_tasks(dataframe):
@@ -47,11 +56,13 @@ def generate_png_timeline(df, unique_types, colors, args):
         for _, row in dataframe.iterrows():
             dur_days = (row["End"] - row["Start"]).days
             start_num = float(mdates.date2num(row["Start"]))
-            ax.barh(
+            bars = ax.barh(
                 row["Y"], dur_days, left=start_num, height=0.04,
                 color=colors[row["Type"]], edgecolor="black", alpha=0.9,
                 zorder=3
             )
+            for patch in bars.patches:
+                patch.set_path_effects(_LIFT)
 
         # Layer 2: Connector lines (hidden behind text boxes)
         for i, (_, row) in enumerate(dataframe.iterrows()):
@@ -105,7 +116,8 @@ def generate_png_timeline(df, unique_types, colors, args):
                 va="center", color=text_color, weight="bold", zorder=5,
                 bbox=dict(
                     boxstyle="round,pad=0.4", fc=task_color,
-                    ec="black", lw=0.5, alpha=1.0, zorder=5
+                    ec="black", lw=0.5, alpha=1.0, zorder=5,
+                    path_effects=_LIFT
                 )
             )
 
