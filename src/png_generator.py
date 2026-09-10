@@ -193,5 +193,14 @@ def generate_png_timeline(df, unique_types, colors, args):
         spine.set_visible(False)
 
     plt.title(args.title, fontsize=16, pad=40, weight="bold", color="#1a1a1a")
+
+    # Add attribution in bottom right corner
+    repo_url = "github.com/kkborowski/chronos-cli"
+    ax.text(
+        0.99, 0.01, f"Made with ❤️ using {repo_url}",
+        transform=ax.transAxes, fontsize=10, color="#999999",
+        ha="right", va="bottom", alpha=0.6
+    )
+
     plt.tight_layout()
     plt.savefig(args.output, bbox_inches="tight", dpi=120)

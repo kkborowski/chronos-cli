@@ -630,6 +630,17 @@ def generate_html_timeline(df, colors, args):
         height=850
     )
 
+    # Add clickable attribution in bottom right corner
+    repo_url = "github.com/kkborowski/chronos-cli"
+    repo_link = "https://github.com/kkborowski/chronos-cli"
+    fig.add_annotation(
+        x=0.99, y=0.01, text=f"Made with ❤️ using <a href='{repo_link}' target='_blank' style='color:#999999;text-decoration:underline;'>{repo_url}</a>",
+        showarrow=False, xref="paper", yref="paper",
+        xanchor="right", yanchor="bottom",
+        font=dict(size=10, color="#999999"), bgcolor="rgba(0,0,0,0)",
+        bordercolor="rgba(0,0,0,0)"
+    )
+
     fig.write_html(
         args.output, include_plotlyjs='cdn',
         post_script=[_HIGHLIGHT_JS, _TODAY_JS, _TOOLTIP_JS, _THEME_JS]
