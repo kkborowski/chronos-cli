@@ -303,6 +303,15 @@ _THEME_JS = """
             node.parentNode.removeChild(node);
         });
 
+        // Maps a task's id to its callout shape ("circle" or "box").
+        var shapeById = {};
+        (gd.data || []).forEach(function (trace) {
+            var meta = trace.meta;
+            if (meta && meta.taskId !== undefined) {
+                shapeById[meta.taskId] = meta.shape;
+            }
+        });
+
         var anns = (gd.layout && gd.layout.annotations) || [];
         gd.querySelectorAll('g.annotation').forEach(function (node) {
             var ann = anns[parseInt(node.getAttribute('data-index'), 10)];
@@ -311,8 +320,16 @@ _THEME_JS = """
             }
             var rect = node.querySelector('rect.bg');
             if (!rect) { return; }
-            rect.setAttribute('rx', 6);
-            rect.setAttribute('ry', 6);
+            var taskId = ann.name.slice(5);
+            if (shapeById[taskId] === 'circle') {
+                var w = parseFloat(rect.getAttribute('width'));
+                var h = parseFloat(rect.getAttribute('height'));
+                rect.setAttribute('rx', w / 2);
+                rect.setAttribute('ry', h / 2);
+            } else {
+                rect.setAttribute('rx', 6);
+                rect.setAttribute('ry', 6);
+            }
             rect.style.filter = 'url(#' + LIFT + ')';
             rect.parentNode.insertBefore(
                 glossFor(rect, GLOSS), rect.nextSibling
@@ -324,7 +341,11 @@ _THEME_JS = """
         });
     }
 
+    // Highlight clicks restyle/relayout the plot without a full replot, so
+    // those events must also trigger decorate() to keep the theme applied.
     gd.on('plotly_afterplot', decorate);
+    gd.on('plotly_relayout', decorate);
+    gd.on('plotly_restyle', decorate);
     decorate();
 })();
 """
@@ -592,10 +613,12 @@ def generate_html_timeline(df, colors, args):
             if description:
                 hover_card += f"<br><br>{description}"
 
+            is_status = str(row["Type"]).strip().lower() == "status"
             hover_meta = dict(
                 taskId=task_id, groups=connections,
                 jira=jira_url, conf=conf_url,
-                bg=task_color, fg=text_color
+                bg=task_color, fg=text_color,
+                shape="circle" if is_status else "box"
             )
 
             fig.add_trace(go.Scatter(
@@ -649,7 +672,9 @@ def generate_html_timeline(df, colors, args):
                 showarrow=False, align="center", font=dict(
                     size=9, color=text_color
                 ),
-                bordercolor="black", borderwidth=0.5, borderpad=5,
+                bordercolor="black", borderwidth=0.5,
+                borderpad=14 if is_status else 5,
+                yshift=-1 if is_status else 0,
                 bgcolor=task_color, opacity=1.0,
                 name=f"task-{task_id}"
             )

@@ -4,6 +4,7 @@ import matplotlib.dates as mdates  # type: ignore[import-untyped]
 import matplotlib.patches as mpatches
 import matplotlib.patheffects as mpe
 import matplotlib.pyplot as plt
+import matplotlib.transforms as mtransforms
 
 
 # Matches the HTML theme's raised look.
@@ -159,11 +160,20 @@ def generate_png_timeline(df, unique_types, colors, args):
             wrapped_text = textwrap.fill(str(row["Task"]), width=20)
             final_text = f"{wrapped_text}\n({row['Duration']})"
 
+            is_status = str(row["Type"]).strip().lower() == "status"
+            boxstyle = "circle,pad=0.85" if is_status else "round,pad=0.4"
+            text_transform = ax.transData
+            if is_status:
+                text_transform = mtransforms.offset_copy(
+                    ax.transData, fig=fig, y=-1, units="dots"
+                )
+
             ax.text(
                 mid_date_num, text_y, final_text, fontsize=8, ha="center",
                 va="center", color=text_color, weight="bold", zorder=5,
+                transform=text_transform,
                 bbox=dict(
-                    boxstyle="round,pad=0.4", fc=task_color,
+                    boxstyle=boxstyle, fc=task_color,
                     ec="black", lw=0.5, alpha=1.0, zorder=5,
                     path_effects=_LIFT
                 )
