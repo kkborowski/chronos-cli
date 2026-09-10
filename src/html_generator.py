@@ -682,7 +682,6 @@ def generate_html_timeline(df, colors, args):
             bgcolor="#f8f9fa", bordercolor="gray", borderwidth=1
         ),
         margin=dict(t=80, b=60, l=40, r=40),
-        width=_PLOT_WIDTH_PX,
         height=850
     )
 
@@ -698,6 +697,6 @@ def generate_html_timeline(df, colors, args):
     )
 
     fig.write_html(
-        args.output, include_plotlyjs='cdn',
+        args.output, include_plotlyjs='cdn', config={"responsive": True},
         post_script=[_HIGHLIGHT_JS, _TODAY_JS, _TOOLTIP_JS, _THEME_JS]
     )
