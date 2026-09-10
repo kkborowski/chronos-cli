@@ -85,8 +85,19 @@ class DataLoader:
 
         parsed_dates = []
         for idx, row in df.iterrows():
-            raw_date = str(row["Target Date"]).strip()
+            raw_value = row["Target Date"]
             row_idx = int(str(idx))
+
+            # Excel date-formatted cells arrive as real datetime objects;
+            # use them directly instead of running strict string parsing.
+            if isinstance(raw_value, pd.Timestamp):
+                parsed_dates.append(raw_value.to_pydatetime())
+                continue
+            if isinstance(raw_value, datetime):
+                parsed_dates.append(raw_value)
+                continue
+
+            raw_date = str(raw_value).strip()
 
             try:
                 if self.date_mode == "us":
