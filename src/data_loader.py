@@ -76,6 +76,13 @@ class DataLoader:
             else:
                 df[col_name] = df[col_name].fillna("").astype(str).str.strip()
 
+        if "Placement" not in df.columns:
+            df["Placement"] = ""
+        else:
+            df["Placement"] = (
+                df["Placement"].fillna("").astype(str).str.strip().str.lower()
+            )
+
         parsed_dates = []
         for idx, row in df.iterrows():
             raw_date = str(row["Target Date"]).strip()
@@ -119,9 +126,20 @@ class DataLoader:
         df["End"] = parsed_dates
         df["Start"] = df.apply(self._calculate_start_date, axis=1)
         df = df.sort_values(by="Start").reset_index(drop=True)
+        df["IsAbove"] = df.apply(self._resolve_placement, axis=1)
 
         self._resolve_dynamic_colors(df)
         return df
+
+    def _resolve_placement(self, row: Any) -> bool:
+        """Applies the 'Placement' override, else falls back to Type-based
+        default (dependency tasks go below, everything else goes above)."""
+        placement = str(row["Placement"]).strip().lower()
+        if placement == "up":
+            return True
+        if placement == "down":
+            return False
+        return str(row["Type"]).strip().lower() != "dependency"
 
     def _calculate_start_date(self, row: Any) -> datetime:
         """Calculates start datetime boundary based on duration parameters."""

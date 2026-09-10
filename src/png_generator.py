@@ -77,8 +77,8 @@ def _pack_labels(dataframe, min_gap_days):
 
 def generate_png_timeline(df, unique_types, colors, args):
     """Generates the static high-quality PNG chart using Matplotlib."""
-    df_normal = df[df["Type"] != "dependency"].copy()
-    df_dep = df[df["Type"] == "dependency"].copy()
+    df_normal = df[df["IsAbove"]].copy()
+    df_dep = df[~df["IsAbove"]].copy()
 
     min_gap_days = _estimate_label_gap_days(df)
     if not df_normal.empty:

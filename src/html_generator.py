@@ -435,8 +435,8 @@ def generate_html_timeline(df, colors, args):
         sys.exit(1)
 
     # 1. Process data structures (same logic as PNG)
-    df_normal = df[df["Type"] != "dependency"].copy()
-    df_dep = df[df["Type"] == "dependency"].copy()
+    df_normal = df[df["IsAbove"]].copy()
+    df_dep = df[~df["IsAbove"]].copy()
 
     min_gap_days = _estimate_label_gap_days(df)
     if not df_normal.empty:
