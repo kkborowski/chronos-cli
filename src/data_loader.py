@@ -139,6 +139,14 @@ class DataLoader:
         df = df.sort_values(by="Start").reset_index(drop=True)
         df["IsAbove"] = df.apply(self._resolve_placement, axis=1)
 
+        # Display-only column: drop any time component so hover cards and
+        # labels never show a stray '00:00:00'.
+        display_formats = {
+            "us": "%m.%d.%Y", "iso": "%Y-%m-%d", "eu": "%d.%m.%Y"
+        }
+        display_fmt = display_formats.get(self.date_mode, "%d.%m.%Y")
+        df["Target Date"] = df["End"].apply(lambda d: d.strftime(display_fmt))
+
         self._resolve_dynamic_colors(df)
         return df
 
