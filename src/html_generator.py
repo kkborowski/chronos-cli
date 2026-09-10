@@ -274,14 +274,14 @@ _THEME_JS = """
         defs.innerHTML =
             '<linearGradient id="' + GLOSS + '" x1="0" y1="0" ' +
                 'x2="0.35" y2="1">' +
-                '<stop offset="0%" stop-color="#fff" stop-opacity="0.30"/>' +
-                '<stop offset="45%" stop-color="#fff" stop-opacity="0.06"/>' +
-                '<stop offset="100%" stop-color="#000" stop-opacity="0.18"/>' +
+                '<stop offset="0%" stop-color="#fff" stop-opacity="0.55"/>' +
+                '<stop offset="45%" stop-color="#fff" stop-opacity="0.12"/>' +
+                '<stop offset="100%" stop-color="#000" stop-opacity="0.32"/>' +
             '</linearGradient>' +
             '<filter id="' + LIFT + '" x="-30%" y="-30%" ' +
                 'width="170%" height="180%">' +
-                '<feDropShadow dx="0" dy="2" stdDeviation="2" ' +
-                    'flood-color="#000" flood-opacity="0.35"/>' +
+                '<feDropShadow dx="0" dy="3" stdDeviation="2.5" ' +
+                    'flood-color="#000" flood-opacity="0.55"/>' +
             '</filter>';
         svg.insertBefore(defs, svg.firstChild);
     }
@@ -382,6 +382,49 @@ def _pack_tasks(dataframe):
     return dataframe
 
 
+# Vertical spacing constants for stacking callout label rows above/below
+# the axis; must match the offsets used when rendering each label.
+_LABEL_BASE_ABOVE = 0.45
+_LABEL_BASE_BELOW = 0.55
+_LABEL_STEP = 0.55
+_LABEL_PAD_ABOVE = 0.7
+_LABEL_PAD_BELOW = 2.0
+
+# Figure width in px (must match the width set on fig.update_layout below)
+# and the estimated rendered width of a wrapped callout box, used to size
+# the label row gap in day-units so boxes on the same row never touch.
+_PLOT_WIDTH_PX = 2400
+_LABEL_BOX_PX = 170
+
+
+def _estimate_label_gap_days(df, plot_width_px=_PLOT_WIDTH_PX):
+    """Estimates the day-gap two labels need to not overlap when plotted."""
+    total_span_days = max((df["End"].max() - df["Start"].min()).days, 1) + 20
+    return max(3, _LABEL_BOX_PX * total_span_days / plot_width_px)
+
+
+def _pack_labels(dataframe, min_gap_days):
+    """Assigns each task a label row so nearby labels don't overlap."""
+    mids = dataframe["Start"] + (dataframe["End"] - dataframe["Start"]) / 2
+    row_last_mid = []
+    label_row_by_index = {}
+    for idx in mids.sort_values().index:
+        mid = mids[idx]
+        placed = False
+        for row_idx, last_mid in enumerate(row_last_mid):
+            if (mid - last_mid).days >= min_gap_days:
+                row_last_mid[row_idx] = mid
+                label_row_by_index[idx] = row_idx
+                placed = True
+                break
+        if not placed:
+            row_last_mid.append(mid)
+            label_row_by_index[idx] = len(row_last_mid) - 1
+    dataframe = dataframe.copy()
+    dataframe["LabelRow"] = dataframe.index.map(label_row_by_index)
+    return dataframe
+
+
 def generate_html_timeline(df, colors, args):
     """Generates an interactive HTML timeline with clickable web shortcuts."""
     if go is None:
@@ -395,19 +438,31 @@ def generate_html_timeline(df, colors, args):
     df_normal = df[df["Type"] != "dependency"].copy()
     df_dep = df[df["Type"] == "dependency"].copy()
 
+    min_gap_days = _estimate_label_gap_days(df)
     if not df_normal.empty:
         df_normal = _pack_tasks(df_normal)
+        df_normal = _pack_labels(df_normal, min_gap_days)
+        df_normal["Y"] = 0.15 + df_normal["Level"] * 0.08
     if not df_dep.empty:
         df_dep = _pack_tasks(df_dep)
-
-    df_normal["Y"] = 0.15 + df_normal["Level"] * 0.08
-    df_dep["Y"] = -0.32 - df_dep["Level"] * 0.08
+        df_dep = _pack_labels(df_dep, min_gap_days)
+        df_dep["Y"] = -0.32 - df_dep["Level"] * 0.08
 
     # Combine data to calculate dynamic axis bounds
     norm_max = df_normal["Y"].max() if not df_normal.empty else 0.5
     dep_min = df_dep["Y"].min() if not df_dep.empty else -0.5
-    max_y = norm_max + 2.8
-    min_y = dep_min - 4.2
+    norm_label_rows = (
+        df_normal["LabelRow"].max() + 1 if not df_normal.empty else 4
+    )
+    dep_label_rows = df_dep["LabelRow"].max() + 1 if not df_dep.empty else 4
+    max_y = (
+        norm_max + _LABEL_BASE_ABOVE
+        + (norm_label_rows - 1) * _LABEL_STEP + _LABEL_PAD_ABOVE
+    )
+    min_y = (
+        dep_min - _LABEL_BASE_BELOW
+        - (dep_label_rows - 1) * _LABEL_STEP - _LABEL_PAD_BELOW
+    )
 
     # Initialize layout figure
     fig = go.Figure()
@@ -466,7 +521,7 @@ def generate_html_timeline(df, colors, args):
         dataframe = dataframe.sort_values(by="Start")
         added_legends = set()
 
-        for i, (_, row) in enumerate(dataframe.iterrows()):
+        for _, row in dataframe.iterrows():
             task_id = task_id_counter[0]
             task_id_counter[0] += 1
             connections = _parse_connections(row.get("Connections", ""))
@@ -476,10 +531,10 @@ def generate_html_timeline(df, colors, args):
 
             levels_count = dataframe["Level"].max() + 1
             if is_above:
-                base_offset = 0.45 + (i % 4) * 0.55
+                base_offset = _LABEL_BASE_ABOVE + row["LabelRow"] * _LABEL_STEP
                 text_y = (0.15 + levels_count * 0.08) + base_offset
             else:
-                base_offset = 0.55 + (i % 4) * 0.55
+                base_offset = _LABEL_BASE_BELOW + row["LabelRow"] * _LABEL_STEP
                 text_y = (-0.32 - levels_count * 0.08) - base_offset
 
             # Determine text color contrast
@@ -627,6 +682,7 @@ def generate_html_timeline(df, colors, args):
             bgcolor="#f8f9fa", bordercolor="gray", borderwidth=1
         ),
         margin=dict(t=80, b=60, l=40, r=40),
+        width=_PLOT_WIDTH_PX,
         height=850
     )
 
